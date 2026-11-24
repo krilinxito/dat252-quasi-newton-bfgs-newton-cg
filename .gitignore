@@ -1,0 +1,17 @@
+# Entorno virtual Python
+venv/
+.venv/
+
+# Cachés de Python y Jupyter
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Archivos temporales de Office / OS
+~$*.docx
+.DS_Store
+Thumbs.db
+
+# Archivos de referencia locales (plantilla / exposición previa)
+Gnombres_Dat252.docx
+Informe_NewtonKrylov_DAT252.pdf

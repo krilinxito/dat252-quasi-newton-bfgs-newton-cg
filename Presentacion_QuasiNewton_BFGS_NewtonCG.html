@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Métodos Cuasi-Newtonianos, BFGS y Newton-CG — DAT-252 UMSA</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+<style>
+  :root {
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --surface-alt: #f1f5f9;
+    --navy: #143652;
+    --navy-deep: #0c2235;
+    --accent: #0d9488;
+    --accent-soft: #ccfbf1;
+    --purple: #6d28d9;
+    --purple-soft: #ede9fe;
+    --amber: #d97706;
+    --amber-soft: #fef3c7;
+    --red: #dc2626;
+    --red-soft: #fee2e2;
+    --blue: #2563eb;
+    --text: #0f172a;
+    --muted: #475569;
+    --border: #cbd5e1;
+    --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    --code-bg: #0f172a;
+    --code-fg: #e2e8f0;
+  }
+  body.dark {
+    --bg: #0b1220;
+    --surface: #111b2e;
+    --surface-alt: #18253d;
+    --navy: #38bdf8;
+    --navy-deep: #e0f2fe;
+    --accent: #2dd4bf;
+    --accent-soft: rgba(45, 212, 191, 0.14);
+    --purple: #a78bfa;
+    --purple-soft: rgba(167, 139, 250, 0.15);
+    --amber: #fbbf24;
+    --amber-soft: rgba(251, 191, 36, 0.15);
+    --red: #f87171;
+    --red-soft: rgba(248, 113, 113, 0.15);
+    --blue: #60a5fa;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --border: #263650;
+    --shadow: 0 12px 35px rgba(0, 0, 0, 0.45);
+    --code-bg: #060b14;
+    --code-fg: #e2e8f0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%; width: 100%; overflow: hidden;
+    font-family: "Segoe UI", "Inter", Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+    transition: background 0.25s, color 0.25s;
+  }
+
+  /* Top chrome */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; height: 48px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; z-index: 50; font-size: 13px;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; color: var(--muted); font-weight: 600; }
+  .badge {
+    background: var(--navy); color: #fff; padding: 3px 9px; border-radius: 999px;
+    font-size: 11.5px; letter-spacing: 0.4px; font-weight: 700;
+  }
+  body.dark .badge { color: #082f49; }
+  .topbar-right { display: flex; align-items: center; gap: 8px; }
+  .btn-icon {
+    background: var(--surface-alt); border: 1px solid var(--border); color: var(--text);
+    padding: 5px 10px; border-radius: 7px; cursor: pointer; font-size: 12px; font-weight: 600;
+    transition: all 0.15s;
+  }
+  .btn-icon:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-icon.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .progress-wrap { position: fixed; top: 48px; left: 0; right: 0; height: 4px; background: var(--surface-alt); z-index: 49; }
+  .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); width: 0%; transition: width 0.3s ease; }
+
+  /* Deck & Slides */
+  .deck {
+    position: fixed; top: 52px; bottom: 52px; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px 28px;
+  }
+  .slide {
+    display: none; width: 100%; max-width: 1220px; height: 100%; max-height: 700px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: var(--shadow); padding: 30px 42px; overflow-y: auto;
+    flex-direction: column; justify-content: space-between;
+    animation: fadeSlide 0.25s ease-out;
+  }
+  .slide.active { display: flex; }
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .slide-header { border-bottom: 2px solid var(--surface-alt); padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: baseline; }
+  .slide-tag { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); }
+  .slide-title { font-size: 27px; font-weight: 800; color: var(--navy); line-height: 1.18; margin-top: 2px; }
+  .slide-num { font-size: 13px; color: var(--muted); font-weight: 700; }
+
+  .slide-body { flex: 1; display: flex; flex-direction: column; gap: 13px; justify-content: center; }
+
+  /* Layout helpers */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: stretch; }
+  .grid-2-wide { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 18px; align-items: stretch; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: stretch; }
+
+  .card {
+    background: var(--surface-alt); border: 1px solid var(--border); border-radius: 12px;
+    padding: 15px 18px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .card h3 { font-size: 15.5px; color: var(--navy); font-weight: 800; display: flex; align-items: center; gap: 7px; }
+  .card p, .card li { font-size: 14px; line-height: 1.5; color: var(--text); }
+  .card ul { padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+
+  .card.teal { border-left: 4px solid var(--accent); }
+  .card.purple { border-left: 4px solid var(--purple); }
+  .card.amber { border-left: 4px solid var(--amber); }
+  .card.red { border-left: 4px solid var(--red); }
+
+  .math-box {
+    background: var(--surface); border: 1.5px solid var(--navy); border-radius: 10px;
+    padding: 11px 16px; text-align: center; font-size: 17px; overflow-x: auto;
+  }
+  .math-box.accent { border-color: var(--accent); background: var(--accent-soft); }
+  .math-box.purple { border-color: var(--purple); background: var(--purple-soft); }
+  .math-box.amber  { border-color: var(--amber);  background: var(--amber-soft); }
+
+  .callout {
+    border-radius: 10px; padding: 11px 15px; font-size: 13.8px; line-height: 1.48;
+    border-left: 4px solid var(--accent); background: var(--accent-soft);
+  }
+  .callout.purple { border-left-color: var(--purple); background: var(--purple-soft); }
+  .callout.amber  { border-left-color: var(--amber);  background: var(--amber-soft); }
+  .callout.red    { border-left-color: var(--red);    background: var(--red-soft); }
+
+  /* Pseudocode */
+  pre.algo {
+    background: var(--code-bg); color: var(--code-fg); border-radius: 10px;
+    padding: 13px 16px; font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 12.6px; line-height: 1.52; overflow-x: auto;
+  }
+  .kw { color: #38bdf8; font-weight: 700; }
+  .cm { color: #94a3b8; font-style: italic; }
+  .hl { color: #34d399; font-weight: 700; }
+  .warn { color: #fbbf24; font-weight: 700; }
+
+  /* Tables */
+  table.clean { width: 100%; border-collapse: collapse; font-size: 13.2px; }
+  table.clean th {
+    background: var(--navy); color: #fff; text-align: left; padding: 8px 10px; font-weight: 700;
+  }
+  body.dark table.clean th { background: #1e3a5f; color: #f8fafc; }
+  table.clean td { padding: 7.5px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  table.clean tr:nth-child(even) td { background: var(--surface-alt); }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+  .pill.good { background: var(--accent-soft); color: var(--accent); }
+  .pill.mid  { background: var(--amber-soft);  color: var(--amber); }
+  .pill.bad  { background: var(--red-soft);    color: var(--red); }
+  .pill.purp { background: var(--purple-soft); color: var(--purple); }
+
+  /* Cover slide */
+  .cover-slide {
+    background: linear-gradient(135deg, #0d2b45 0%, #143d5e 52%, #1d2d5c 100%);
+    color: #f8fafc; border: none; text-align: center; justify-content: center; gap: 20px;
+  }
+  .cover-inst { font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: #7dd3fc; font-weight: 700; }
+  .cover-title { font-size: 40px; font-weight: 900; line-height: 1.15; max-width: 920px; margin: 0 auto; }
+  .cover-sub { font-size: 19px; color: #cbd5e1; max-width: 780px; margin: 0 auto; line-height: 1.45; }
+  .cover-meta {
+    display: inline-grid; grid-template-columns: auto auto; gap: 6px 26px; text-align: left;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 12px; padding: 16px 28px; margin: 8px auto 0; font-size: 14.5px;
+  }
+  .cover-meta span.lbl { color: #7dd3fc; font-weight: 700; }
+  .cover-hints { font-size: 12.5px; color: #94a3b8; margin-top: 8px; }
+  .kbd {
+    display: inline-block; padding: 2px 6px; border-radius: 5px; font-family: monospace;
+    background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.25); color: #fff; font-size: 11.5px;
+  }
+
+  /* Bottom navigation */
+  .bottombar {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 52px;
+    background: var(--surface); border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 22px; z-index: 50;
+  }
+  .nav-group { display: flex; align-items: center; gap: 10px; }
+  .nav-btn {
+    background: var(--navy); color: #fff; border: none; border-radius: 8px;
+    padding: 7px 16px; font-size: 13.5px; font-weight: 700; cursor: pointer;
+    transition: transform 0.1s, opacity 0.15s;
+  }
+  body.dark .nav-btn { background: #2563eb; color: #fff; }
+  .nav-btn:hover { opacity: 0.9; }
+  .nav-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .slide-counter { font-size: 13.5px; font-weight: 700; color: var(--muted); min-width: 78px; text-align: center; }
+
+  /* Speaker notes drawer */
+  .notes-panel {
+    position: fixed; bottom: 56px; right: 20px; width: 420px; max-width: calc(100vw - 40px);
+    background: var(--code-bg); color: #e2e8f0; border: 1px solid #334155; border-radius: 12px;
+    padding: 14px 16px; z-index: 70; box-shadow: 0 14px 36px rgba(0,0,0,0.45);
+    display: none; font-size: 13px; line-height: 1.5;
+  }
+  .notes-panel.open { display: block; }
+  .notes-panel h4 { color: #38bdf8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+
+  /* Overview modal */
+  .overview {
+    position: fixed; inset: 48px 0 52px 0; background: rgba(15, 23, 42, 0.92);
+    z-index: 80; display: none; padding: 26px; overflow-y: auto;
+  }
+  .overview.open { display: block; }
+  .ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; max-width: 1200px; margin: 0 auto; }
+  .ov-card {
+    background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
+    padding: 14px; cursor: pointer; transition: transform 0.15s, border-color 0.15s;
+  }
+  .ov-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .ov-card.current { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .ov-num { font-size: 11px; font-weight: 800; color: var(--accent); text-transform: uppercase; }
+  .ov-title { font-size: 14px; font-weight: 700; color: var(--text); margin-top: 4px; }
+
+  /* Interactive widgets */
+  .canvas-wrap {
+    background: #ffffff; border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  canvas { display: block; border-radius: 6px; max-width: 100%; height: auto; }
+  .ctrl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; justify-content: center; }
+  .ctrl-btn {
+    background: var(--navy); color: #fff; border: none; border-radius: 7px;
+    padding: 6px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  }
+  .ctrl-btn.teal { background: var(--accent); }
+  .ctrl-btn.purple { background: var(--purple); }
+  .ctrl-btn.outline { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
+  .stat-strip {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; font-size: 12px;
+  }
+  .stat-chip {
+    background: var(--surface-alt); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 9px; text-align: center;
+  }
+  .stat-chip b { display: block; font-size: 13.5px; }
+
+  input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
+
+  @media (max-width: 900px) {
+    .grid-2, .grid-2-wide, .grid-3 { grid-template-columns: 1fr; }
+    .slide { padding: 18px 20px; }
+    .cover-title { font-size: 27px; }
+    .slide-title { font-size: 21px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="badge">DAT-252 · UMSA</span>
+    <span>Métodos Cuasi-Newtonianos · BFGS · Newton-CG</span>
+  </div>
+  <div class="topbar-right">
+    <button class="btn-icon" id="btnNotes" title="Notas del expositor (N)">Notas (N)</button>
+    <button class="btn-icon" id="btnOverview" title="Mapa de diapositivas (O)">Índice (O)</button>
+    <button class="btn-icon" id="btnTheme" title="Alternar tema claro/oscuro (D)">Tema (D)</button>
+    <button class="btn-icon" id="btnFS" title="Pantalla completa (F)">Pantalla (F)</button>
+  </div>
+</header>
+<div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+
+<!-- DECK -->
+<main class="deck">
+
+  <!-- SLIDE 1: PORTADA -->
+  <section class="slide cover-slide active" data-title="Portada" data-notes="Bienvenida. Conectar con la exposición anterior de Newton-Krylov (sistemas F(x)=0): hoy pasamos a optimización irrestricta min f(x), donde la derivada es el gradiente y el Jacobiano del gradiente es la Hessiana simétrica. Veremos los dos puentes modernos para evitar invertir la Hessiana: BFGS y Newton-CG.">
+    <div class="cover-inst">Universidad Mayor de San Andrés · Facultad de Ciencias Puras y Naturales · Carrera de Informática</div>
+    <h1 class="cover-title">Introducción a Métodos Cuasi-Newtonianos,<br/>Algoritmo BFGS y Método de Newton-CG</h1>
+    <p class="cover-sub">De la geometría de primer orden a la optimización de segundo orden sin factorizar la matriz Hessiana</p>
+    <div class="cover-meta">
+      <span class="lbl">Materia:</span><span>Métodos Numéricos II (DAT-252)</span>
+      <span class="lbl">Docente:</span><span>M.Sc. Carlos Mullisaca Choque</span>
+      <span class="lbl">Estudiantes:</span><span>Gómez Mallo, Maximiliano · Medina Balboa, Iver Samuel</span>
+      <span class="lbl">Fecha:</span><span>La Paz, Bolivia — 25 de Noviembre de 2026</span>
+    </div>
+    <div class="cover-hints">
+      Navegación: <span class="kbd">←</span> <span class="kbd">→</span> o <span class="kbd">Espacio</span> · Notas: <span class="kbd">N</span> · Índice: <span class="kbd">O</span> · Tema: <span class="kbd">D</span> · Pantalla completa: <span class="kbd">F</span>
+    </div>
+  </section>
+
+  <!-- SLIDE 2: EL PROBLEMA Y EL DILEMA -->
+  <section class="slide" data-title="El problema y el dilema de Newton" data-notes="Empezar con la formulación min f(x). Recalcar el abismo entre Descenso de Gradiente (barato pero zig-zag en valles mal condicionados) y Newton exacto (rápido pero O(n^3) y se rompe con Hessiana indefinida). Presentar BFGS y Newton-CG como las dos grandes respuestas.">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">01 · Contexto y Motivación</div>
+        <h2 class="slide-title">Optimización Irrestricta y el Dilema de Newton</h2>
+      </div>
+      <span class="slide-num">02 / 14</span>
+    </div>
+    <div class="slide-body">
+      <div class="math-box">
+        $$\min_{x \in \mathbb{R}^n} f(x), \qquad f \in C^2(\mathbb{R}^n) \qquad \Longrightarrow \qquad \underbrace{\nabla f(x^*) = 0}_{\text{1.er orden}}, \quad \underbrace{\nabla^2 f(x^*) \succeq 0}_{\text{2.do orden}}$$
+      </div>
+      <div class="grid-2">
+        <div class="card red">
+          <h3>Descenso de Gradiente (1.er orden)</h3>
+          <div style="text-align:center; padding:4px 0;">$$x_{k+1} = x_k - \alpha_k \nabla f(x_k)$$</div>
+          <ul>
+            <li><b>Costo bajo:</b> $O(n)$ por iteración, solo requiere $\nabla f$.</li>
+            <li><b>Problema:</b> Ignora la curvatura. Si $\kappa(\nabla^2 f) \gg 1$, rebota en <i>zig-zag</i>.</li>
+            <li><b>Convergencia lineal:</b> $O(\kappa)$ iteraciones (lento en valles estrechos).</li>
+          </ul>
+        </div>
+        <div class="card amber">
+          <h3>Método de Newton Exacto (2.do orden)</h3>
+          <div style="text-align:center; padding:4px 0;">$$\nabla^2 f(x_k)\, p_k = -\nabla f(x_k), \quad x_{k+1} = x_k + \alpha_k p_k$$</div>
+          <ul>
+            <li><b>Convergencia cuadrática</b> local (duplica dígitos exactos por paso).</li>
+            <li><b>Costo prohibitivo:</b> $O(n^2)$ derivadas + memoria y $O(n^3)$ factorización.</li>
+            <li><b>Frágil si $\nabla^2 f$ no es SPD:</b> puede apuntar hacia máximos o puntos silla.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">
+        <b>La pregunta central:</b> ¿Podemos capturar la <b>curvatura</b> (velocidad de 2.do orden) sin pagar $O(n^3)$ ni construir la Hessiana exacta? <b>Sí — por dos caminos:</b> <b>Cuasi-Newton (BFGS)</b> y <b>Newton-CG</b>.
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 3: INTUICIÓN CUASI-NEWTON -->
+  <section class="slide" data-title="Intuición de los Métodos Cuasi-Newtonianos" data-notes="Explicar que los métodos Cuasi-Newtonianos construyen una aproximación B_k (o su inversa H_k) únicamente observando cómo cambia el gradiente al dar un paso. Destacar que H_k actúa como un precondicionador geométrico que transforma elipses alargadas en círculos.">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">02 · Métodos Cuasi-Newtonianos</div>
+        <h2 class="slide-title">Idea Central: Aprender la Curvatura Solo con Gradientes</h2>
+      </div>
+      <span class="slide-num">03 / 14</span>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2-wide">
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div class="card teal">
+            <h3>Modelo Cuadrático Aproximado</h3>
+            <p>En cada iteración $k$, reemplazamos la Hessiana real $\nabla^2 f(x_k)$ por una matriz simétrica definida positiva $B_k \succ 0$ (o directamente su inversa $H_k = B_k^{-1}$):</p>
+            <div class="math-box" style="font-size:15.5px;">
+              $$m_k(p) = f(x_k) + \nabla f_k^T p + \tfrac{1}{2} p^T B_k p$$
+            </div>
+            <p>El minimizador de $m_k(p)$ define la dirección cuasi-Newtoniana:</p>
+            <div class="math-box accent" style="font-size:16px;">
+              $$p_k = -B_k^{-1}\nabla f_k = -H_k \nabla f_k, \qquad x_{k+1} = x_k + \alpha_k p_k$$
+            </div>
+          </div>
+          <div class="callout">
+            <b>Garantía de descenso:</b> Si $H_k \succ 0$ y $\nabla f_k \neq 0$, entonces
+            $\nabla f_k^T p_k = -\nabla f_k^T H_k \nabla f_k < 0$.
+            La dirección <b>siempre apunta cuesta abajo</b>.
+          </div>
+        </div>
+        <div class="card" style="align-items:center; justify-content:center;">
+          <h3>Geometría: ¿Qué hace $H_k$?</h3>
+          <svg viewBox="0 0 340 270" width="320" height="250" aria-label="Geometría de curvatura">
+            <!-- Elliptical contours -->
+            <g transform="translate(170,135) rotate(-28)">
+              <ellipse rx="145" ry="42" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.2" opacity="0.55"/>
+              <ellipse rx="108" ry="30" fill="#bae6fd" stroke="#0284c7" stroke-width="1.2" opacity="0.65"/>
+              <ellipse rx="70" ry="19" fill="#7dd3fc" stroke="#0369a1" stroke-width="1.3" opacity="0.75"/>
+              <ellipse rx="32" ry="9" fill="#38bdf8" stroke="#0c4a6e" stroke-width="1.4" opacity="0.85"/>
+            </g>
+            <!-- Optimum -->
+            <circle cx="170" cy="135" r="5.5" fill="#f59e0b" stroke="#0f172a" stroke-width="1.5"/>
+            <text x="179" y="139" font-size="12" font-weight="bold" fill="#0f172a">x*</text>
+            <!-- Point xk -->
+            <circle cx="88" cy="156" r="5" fill="#0f172a"/>
+            <text x="64" y="174" font-size="12" font-weight="bold" fill="#0f172a">x_k</text>
+            <!-- Steepest descent arrow (perpendicular to contour, misses x*) -->
+            <line x1="88" y1="156" x2="112" y2="108" stroke="#dc2626" stroke-width="2.6" marker-end="url(#arrR)"/>
+            <text x="45" y="102" font-size="11.5" font-weight="bold" fill="#dc2626">-∇f (zig-zag)</text>
+            <!-- Quasi-Newton arrow (aimed at x*) -->
+            <line x1="88" y1="156" x2="161" y2="138" stroke="#0d9488" stroke-width="3" marker-end="url(#arrT)"/>
+            <text x="108" y="172" font-size="11.5" font-weight="bold" fill="#0d9488">-H_k ∇f (directo)</text>
+            <defs>
+              <marker id="arrR" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#dc2626"/>
+              </marker>
+              <marker id="arrT" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#0d9488"/>
+              </marker>
+            </defs>
+          </svg>
+          <p style="font-size:12.5px; color:var(--muted); text-align:center;">
+            $-\nabla f_k$ es ortogonal a la curva de nivel (rebota entre paredes).<br/>
+            $-H_k \nabla f_k$ compensa la escala de curvatura y apunta al fondo del valle.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 4: ECUACIÓN SECANTE Y CONDICIÓN DE CURVATURA -->
+  <section class="slide" data-title="Ecuación Secante y Condición de Curvatura" data-notes="Mostrar la analogía 1D con el método de la secante: f''(x) ≈ (f'(x_{k+1}) - f'(x_k)) / (x_{k+1} - x_k). En R^n no podemos dividir vectores, así que escribimos B_{k+1} s_k = y_k. Enfatizar s_k^T y_k > 0 y cómo las condiciones de Wolfe la garantizan automáticamente.">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">02 · Fundamento Matemático</div>
+        <h2 class="slide-title">La Ecuación Secante y la Condición de Curvatura</h2>
+      </div>
+      <span class="slide-num">04 / 14</span>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="card teal">
+          <h3>1. De Taylor a la Ecuación Secante</h3>
+          <p>Al movernos de $x_k$ a $x_{k+1}$, observamos el desplazamiento y el cambio del gradiente:</p>
+          <div class="math-box" style="font-size:15.5px;">
+            $$s_k = x_{k+1} - x_k, \qquad y_k = \nabla f(x_{k+1}) - \nabla f(x_k)$$
+          </div>
+          <p>Por teorema del valor medio integral, $\nabla f_{k+1} - \nabla f_k \approx \nabla^2 f(x_{k+1})(x_{k+1}-x_k)$. Exigimos que la nueva aproximación $B_{k+1}$ (o $H_{k+1} = B_{k+1}^{-1}$) imite este comportamiento:</p>
+          <div class="math-box accent" style="font-size:16.5px;">
+            $$B_{k+1} s_k = y_k \quad \Longleftrightarrow \quad H_{k+1} y_k = s_k$$
+          </div>
+        </div>
+        <div class="card purple">
+          <h3>2. Condición de Curvatura y Wolfe</h3>
+          <p>Multiplicando $B_{k+1} s_k = y_k$ a la izquierda por $s_k^T$: si queremos $B_{k+1} \succ 0$, <b>es obligatorio</b> que:</p>
+          <div class="math-box purple" style="font-size:16.5px;">
+            $$s_k^T B_{k+1} s_k = s_k^T y_k > 0$$
+          </div>
+          <p>En funciones no convexas esto podría fallar. Lo garantizamos eligiendo $\alpha_k$ con las <b>Condiciones de Wolfe</b> ($0 < c_1 < c_2 < 1$):</p>
+          <ul>
+            <li><b>Armijo:</b> $f(x_k + \alpha_k p_k) \le f(x_k) + c_1 \alpha_k \nabla f_k^T p_k$</li>
+            <li><b>Curvatura:</b> $\nabla f(x_k + \alpha_k p_k)^T p_k \ge c_2 \nabla f_k^T p_k$</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout amber">
+        <b>Demostración en una línea:</b> Restando $\nabla f_k^T p_k$ en la condición de curvatura de Wolfe y multiplicando por $\alpha_k > 0$:
+        $$y_k^T s_k = \alpha_k (\nabla f_{k+1} - \nabla f_k)^T p_k \ge -(1 - c_2)\,\alpha_k \underbrace{\nabla f_k^T p_k}_{<\,0} > 0.$$
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 5: FAMILIA QUASI-NEWTON (SR1, DFP, BFGS) -->
+  <section class="slide" data-title="De la Ecuación Secante a BFGS" data-notes="Explicar por qué hay infinitas matrices que cumplen B_{k+1} s_k = y_k (n(n+1)/2 incógnitas simétricas vs solo n ecuaciones). Para elegir una única, pedimos el cambio mínimo respecto a la matriz actual. Mostrar la evolución SR1 -> DFP -> BFGS y por qué BFGS ganó.">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">02 · Familia Cuasi-Newton</div>
+        <h2 class="slide-title">Sistema Subdeterminado: De SR1 y DFP hasta BFGS</h2>
+      </div>
+      <span class="slide-num">05 / 14</span>
+    </div>
+    <div class="slide-body">
+      <p style="font-size:14.5px; color:var(--muted);">
+        Una matriz simétrica $H_{k+1} \in \mathbb{R}^{n \times n}$ tiene $\frac{n(n+1)}{2}$ entradas independientes, pero la ecuación secante $H_{k+1} y_k = s_k$ solo impone $n$ restricciones. Para fijar una solución única, exigimos <b>cambio mínimo</b> respecto a $H_k$:
+      </p>
+      <div class="math-box">
+        $$\min_{H \in \mathbb{R}^{n \times n}} \| H - H_k \|_W \qquad \text{sujeto a} \quad H = H^T, \quad H y_k = s_k$$
+      </div>
+      <div class="grid-3">
+        <div class="card red">
+          <h3>SR1 (Rango 1)</h3>
+          <p>Actualización más simple: $B_{k+1} = B_k + \frac{(y_k - B_k s_k)(y_k - B_k s_k)^T}{(y_k - B_k s_k)^T s_k}$.</p>
+          <ul>
+            <li><b>Pro:</b> Captura curvatura indefinida (útil en región de confianza).</li>
+            <li><b>Contra:</b> El denominador puede anularse; <b>no preserva $B_k \succ 0$</b>.</li>
+          </ul>
+        </div>
+        <div class="card amber">
+          <h3>DFP (Rango 2, 1959/63)</h3>
+          <p>Minimiza $\|B - B_k\|_W$ (actualiza $H$ sumando dos términos de rango 1).</p>
+          <ul>
+            <li><b>Pro:</b> Primer método que preservó SPD.</li>
+            <li><b>Contra:</b> Muy sensible a búsquedas de línea inexactas; puede estancarse si $H_k$ sobreestima la curvatura.</li>
+          </ul>
+        </div>
+        <div class="card teal">
+          <h3>BFGS (Rango 2, 1970)</h3>
+          <p>Minimiza $\|H - H_k\|_W$ con peso $W = \bar{G}$ (Hessiana promedio). Dual exacto de DFP.</p>
+          <ul>
+            <li><b>Pro:</b> Preserva $H_k \succ 0$ y posee <b>autocorrección</b> de autovalores grandes.</li>
+            <li><b>Estándar actual:</b> Más robusto con Wolfe inexacto ($c_2 = 0.9$).</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 6: FÓRMULAS BFGS B_{k+1} y H_{k+1} -->
+  <section class="slide" data-title="Algoritmo BFGS: Fórmulas de Actualización" data-notes="Este es el corazón matemático de BFGS. Mostrar primero B_{k+1} (fácil de interpretar: resta la proyección vieja de B_k sobre s_k y suma la curvatura real observada y_k y_k^T / y_k^T s_k). Luego mostrar el gran truco algorítmico: Sherman-Morrison-Woodbury da H_{k+1} directamente, evitando resolver B_k p_k = -g_k en O(n^3) y bajando el costo a O(n^2).">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">03 · El Algoritmo BFGS</div>
+        <h2 class="slide-title">Fórmulas de BFGS y el Truco de Sherman–Morrison–Woodbury</h2>
+      </div>
+      <span class="slide-num">06 / 14</span>
+    </div>
+    <div class="slide-body">
+      <div class="card">
+        <h3>Actualización de la Hessiana aproximada $B_{k+1}$ (corrección de rango 2)</h3>
+        <div class="math-box" style="font-size:17px;">
+          $$B_{k+1} = B_k \;\underbrace{-\; \frac{B_k s_k s_k^T B_k}{s_k^T B_k s_k}}_{\text{borra curvatura vieja en } s_k} \;+\; \underbrace{\frac{y_k y_k^T}{y_k^T s_k}}_{\text{inyecta curvatura real}}$$
+        </div>
+        <p style="font-size:13.5px; color:var(--muted);">Verificación directa: $B_{k+1} s_k = B_k s_k - B_k s_k + y_k = y_k$. Sin embargo, resolver $B_k p_k = -\nabla f_k$ aún costaría $O(n^3)$.</p>
+      </div>
+      <div class="card teal">
+        <h3>Actualización directa de la inversa $H_{k+1} = B_{k+1}^{-1}$ (costo $O(n^2)$)</h3>
+        <p>Aplicando la identidad de <b>Sherman–Morrison–Woodbury</b> dos veces, con $\rho_k = \dfrac{1}{y_k^T s_k}$:</p>
+        <div class="math-box accent" style="font-size:17.5px;">
+          $$H_{k+1} = \left(I - \rho_k s_k y_k^T\right) H_k \left(I - \rho_k y_k s_k^T\right) + \rho_k s_k s_k^T$$
+        </div>
+        <div class="grid-2" style="margin-top:4px;">
+          <div style="font-size:13.3px;"><b>Forma eficiente en código ($O(n^2)$ sin multiplicar matrices):</b><br/>
+          Sea $v = H_k y_k$. Entonces:<br/>
+          $H_{k+1} = H_k + \rho_k(1 + \rho_k y_k^T v)\,s_k s_k^T - \rho_k(v s_k^T + s_k v^T)$.</div>
+          <div style="font-size:13.3px;"><b>Prueba rápida de SPD hereditaria:</b><br/>
+          Para todo $z \neq 0$, sea $w = (I - \rho_k y_k s_k^T)z$:<br/>
+          $z^T H_{k+1} z = w^T H_k w + \rho_k (s_k^T z)^2 > 0$.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 7: PSEUDOCÓDIGO BFGS, PROPIEDADES Y L-BFGS -->
+  <section class="slide" data-title="BFGS Paso a Paso, Propiedades y L-BFGS" data-notes="Recorrer las 6 líneas del algoritmo BFGS: notar que nunca se invierte ninguna matriz ni se calculan segundas derivadas. Destacar el escalado inicial H_0 = (s_0^T y_0 / y_0^T y_0) I que mejora drásticamente el desempeño. Introducir L-BFGS como la versión de memoria limitada O(mn) para problemas grandes.">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">03 · Algoritmo y Teoría</div>
+        <h2 class="slide-title">BFGS Paso a Paso, Propiedades Clave y L-BFGS</h2>
+      </div>
+      <span class="slide-num">07 / 14</span>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2-wide">
+        <pre class="algo"><span class="kw">Algoritmo 1:</span> BFGS (Búsqueda de línea Wolfe)
+<span class="cm">Entrada:</span> x_0, tolerancia ε, H_0 = I
+<span class="kw">1.</span> k ← 0
+<span class="kw">2.</span> <span class="kw">mientras</span> ||∇f(x_k)|| > ε:
+<span class="kw">3.</span>   p_k ← -H_k ∇f(x_k)               <span class="cm">// O(n²), siempre descenso</span>
+<span class="kw">4.</span>   Hallar α_k con Wolfe (c₁=10⁻⁴, c₂=0.9)
+<span class="kw">5.</span>   x_{k+1} ← x_k + α_k p_k
+<span class="kw">6.</span>   s_k ← x_{k+1} - x_k;  y_k ← ∇f_{k+1} - ∇f_k
+<span class="kw">7.</span>   <span class="kw">si</span> k == 0: H_0 ← (s_0ᵀ y_0 / y_0ᵀ y_0) I  <span class="cm">// escalado inicial</span>
+<span class="kw">8.</span>   ρ_k ← 1 / (y_kᵀ s_k)              <span class="cm">// > 0 por Wolfe</span>
+<span class="kw">9.</span>   <span class="hl">H_{k+1} ← (I - ρ_k s_k y_kᵀ) H_k (I - ρ_k y_k s_kᵀ) + ρ_k s_k s_kᵀ</span>
+<span class="kw">10.</span>  k ← k + 1
+<span class="kw">11.</span> <span class="kw">retornar</span> x_k</pre>
+        <div style="display:flex; flex-direction:column; gap:11px;">
+          <div class="card teal">
+            <h3>Teoremas Fundamentales</h3>
+            <ul>
+              <li><b>Convergencia global:</b> en funciones estrictamente convexas, converge desde cualquier $x_0$.</li>
+              <li><b>Convergencia superlineal</b> (Dennis–Moré):
+                $$\lim_{k \to \infty} \frac{\|x_{k+1} - x^*\|}{\|x_k - x^*\|} = 0$$</li>
+              <li><b>Autocorrección:</b> si $H_k$ sobrestima un paso, la actualización corrige los autovalores en pocas iteraciones (ventaja sobre DFP).</li>
+            </ul>
+          </div>
+          <div class="card purple">
+            <h3>¿Y si $n$ es enorme? → L-BFGS</h3>
+            <p>En vez de guardar la matriz densa $H_k$ ($O(n^2)$), <b>L-BFGS</b> almacena solo los últimos $m \in [5, 20]$ pares $(s_i, y_i)$ y calcula $H_k \nabla f_k$ con la <i>recursión de dos bucles</i> en solo <b>$O(mn)$</b> memoria y tiempo.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 8: EL MURO DE LA ESCALA (INTERACTIVO) -->
+  <section class="slide" data-title="El Muro de la Escala (Interactivo)" data-notes="Mover el deslizador de n = 100 a n = 100,000 frente a la clase para que vean en tiempo real cómo la RAM de BFGS salta de 80 KB a 80 GB y Newton explota en TeraFLOPs. Luego hacer el puente con nuestra primera exposición de Newton-Krylov: ahora la matriz es simétrica, por eso usamos Gradiente Conjugado (CG).">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">04 · Transición a Gran Escala</div>
+        <h2 class="slide-title">¿Cuándo BFGS No Alcanza? Explorador de Memoria y Costo</h2>
+      </div>
+      <span class="slide-num">08 / 14</span>
+    </div>
+    <div class="slide-body">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:14px;">
+          <span style="font-weight:800; color:var(--navy); font-size:15px;">Dimensión del problema: $n =$ <span id="dimVal" style="color:var(--accent); font-size:19px;">10,000</span> variables</span>
+          <span style="font-size:12.5px; color:var(--muted);">Aritmética IEEE 754 (8 bytes / float64)</span>
+        </div>
+        <input type="range" id="dimSlider" min="1" max="6" step="0.05" value="4" />
+        <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--muted);">
+          <span>n = 10</span><span>n = 10²</span><span>n = 10³</span><span>n = 10⁴</span><span>n = 10⁵</span><span>n = 10⁶</span>
+        </div>
+      </div>
+      <table class="clean">
+        <thead>
+          <tr>
+            <th>Método</th>
+            <th>Memoria (RAM)</th>
+            <th>RAM estimada para este $n$</th>
+            <th>Operaciones / iteración</th>
+            <th>Viabilidad</th>
+          </tr>
+        </thead>
+        <tbody id="scaleTableBody"></tbody>
+      </table>
+      <div class="callout purple">
+        <b>Conexión con nuestra 1.ª exposición (Newton-Krylov):</b> Allí resolvíamos $F(x)=0$ con <b>GMRES</b> porque el Jacobiano $J(x)$ no era simétrico. En optimización, $F(x) = \nabla f(x) = 0$ tiene Jacobiano $\nabla^2 f(x)$ <b>simétrico</b> $\Longrightarrow$ reemplazamos GMRES por <b>Gradiente Conjugado (CG)</b>: nace <b>Newton-CG</b>.
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 9: NEWTON-CG Y SECUENCIA DE FORZAMIENTO -->
+  <section class="slide" data-title="Método de Newton-CG y Secuencia de Forzamiento" data-notes="Explicar las dos ideas del Newton inexacto (Dembo-Eisenstat-Steihaug): lejos de x*, resolver exactamente el sistema de Newton es un desperdicio (oversolving). La secuencia de forzamiento eta_k controla qué tan exacto resolvemos CG y determina si la convergencia es lineal, superlineal o cuadrática.">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">05 · El Método de Newton-CG</div>
+        <h2 class="slide-title">Newton Inexacto, Subespacios de Krylov y Secuencia $\eta_k$</h2>
+      </div>
+      <span class="slide-num">09 / 14</span>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="card purple">
+          <h3>Idea: Resolver el Sistema de Newton de Forma Inexacta</h3>
+          <p>En lugar de factorizar $\nabla^2 f(x_k) p_k = -\nabla f(x_k)$, aplicamos <b>Gradiente Conjugado (CG)</b> y nos detenemos en cuanto el residuo relativo sea suficientemente pequeño:</p>
+          <div class="math-box purple" style="font-size:16px;">
+            $$\left\| \nabla^2 f(x_k)\, p_k + \nabla f(x_k) \right\|_2 \le \eta_k \left\| \nabla f(x_k) \right\|_2$$
+          </div>
+          <p>El escalar $\eta_k \in (0, 1)$ es la <b>secuencia de forzamiento</b> (<i>forcing sequence</i>): lejos de $x^*$ somos «perezosos» ($\eta_k \approx 0.5$) y evitamos el <i>oversolving</i>; cerca de $x^*$ apretamos $\eta_k \to 0$.</p>
+        </div>
+        <div class="card">
+          <h3>Teorema de Dembo–Eisenstat–Steihaug (1982)</h3>
+          <table class="clean" style="margin-top:4px;">
+            <thead>
+              <tr><th>Elección de $\eta_k$</th><th>Convergencia local</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>$\eta_k \le \eta < 1$ constante</td><td><span class="pill mid">Lineal</span></td></tr>
+              <tr><td>$\eta_k = \min\big(0.5, \sqrt{\|\nabla f_k\|}\big) \to 0$</td><td><span class="pill good">Superlineal</span></td></tr>
+              <tr><td>$\eta_k = \min\big(0.5, \|\nabla f_k\|\big) = O(\|\nabla f_k\|)$</td><td><span class="pill purp">Cuadrática</span></td></tr>
+            </tbody>
+          </table>
+          <div class="callout amber" style="margin-top:6px; font-size:13px;">
+            <b>¿Por qué importa en la práctica?</b> En nuestro experimento ($n=150$), pedir $\eta=10^{-8}$ fijo multiplica los productos $\nabla^2 f \cdot d$ sin mejorar la precisión final. La regla adaptativa $\sqrt{\|\nabla f_k\|}$ logra lo mismo con una fracción del trabajo.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 10: HESSIAN-FREE Y CURVATURA NEGATIVA (DEMO INTERACTIVA) -->
+  <section class="slide" data-title="Hessian-Free y Curvatura Negativa (Interactivo)" data-notes="Destacar las dos joyas prácticas de Newton-CG: (1) nunca construye la matriz Hessiana, solo evalúa productos Hessiana-vector por diferencias finitas o autodiff; (2) si d_j^T H d_j <= 0 (curvatura negativa en una zona no convexa o punto silla), trunca CG al instante. Hacer clic en el botón del simulador para mostrar en vivo cómo Newton Puro queda atrapado en el punto silla (0,0) mientras BFGS y Newton-CG escapan al mínimo.">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">05 · Dos Claves Prácticas de Newton-CG</div>
+        <h2 class="slide-title">Productos <i>Hessian-Free</i> y Trampa de Curvatura Negativa</h2>
+      </div>
+      <span class="slide-num">10 / 14</span>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div style="display:flex; flex-direction:column; gap:11px;">
+          <div class="card teal">
+            <h3>1. Sin Formar la Hessiana (<i>Hessian-Free</i>)</h3>
+            <p>CG solo necesita el vector $w = \nabla^2 f(x_k)\,d$, nunca las entradas de $\nabla^2 f$. Se obtiene con una sola evaluación extra de $\nabla f$:</p>
+            <div class="math-box" style="font-size:15.5px;">
+              $$\nabla^2 f(x_k)\, d \approx \frac{\nabla f(x_k + h\,d) - \nabla f(x_k)}{h}, \quad h \approx \frac{\sqrt{\varepsilon_{\text{maq}}}}{\|d\|}$$
+            </div>
+            <p style="font-size:13px; color:var(--muted);">O de forma exacta sin error de truncamiento mediante diferenciación automática (truco de Pearlmutter).</p>
+          </div>
+          <div class="card red">
+            <h3>2. Detección de Curvatura Negativa</h3>
+            <p>CG asume matriz definida positiva. En problemas no convexos, si en la iteración interna $j$ ocurre:</p>
+            <div class="math-box" style="border-color:var(--red); background:var(--red-soft); font-size:15.5px;">
+              $$d_j^T \nabla^2 f(x_k)\, d_j \le 0 \;\;\Longrightarrow\;\; \text{Truncar CG: } p_k = \begin{cases} -\nabla f_k & \text{si } j = 0 \\ z_j & \text{si } j > 0 \end{cases}$$
+            </div>
+            <p style="font-size:13px;">Como cada paso previo de CG redujo el modelo cuadrático desde $z_0 = 0$, <b>$p_k$ siempre es dirección de descenso</b> ($\nabla f_k^T p_k < 0$).</p>
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <div style="font-size:13px; font-weight:800; color:#0f172a;">Demo en vivo: Doble pozo $f(x_1,x_2)=x_1^4 - 2x_1^2 + x_2^2 + 0.2x_1x_2$</div>
+          <canvas id="saddleCanvas" width="470" height="300"></canvas>
+          <div class="ctrl-row">
+            <button class="ctrl-btn teal" id="btnSaddleRun">▶ Comparar desde zona no convexa</button>
+            <button class="ctrl-btn outline" id="btnSaddleReset">Reiniciar</button>
+          </div>
+          <div id="saddleInfo" style="font-size:12px; color:#334155; text-align:center;">
+            En $x_0=(0.35, 0.80)$, $\lambda_{\min}(\nabla^2 f) = -2.54 < 0$: Newton puro cae al punto silla $(0,0)$.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 11: ALGORITMO NEWTON-CG COMPLETO -->
+  <section class="slide" data-title="Algoritmo Newton-CG Paso a Paso" data-notes="Revisar la estructura de doble bucle: afuera es un método de búsqueda de línea con Armijo; adentro es Gradiente Conjugado estándar con solo dos salidas tempranas: (1) curvatura negativa detectada, o (2) residuo por debajo de eta_k ||grad||.">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">05 · Implementación</div>
+        <h2 class="slide-title">Algoritmo Newton-CG Completo (Newton Truncado)</h2>
+      </div>
+      <span class="slide-num">11 / 14</span>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <pre class="algo"><span class="kw">Algoritmo 2 (Bucle Externo):</span> Newton-CG
+<span class="cm">Entrada:</span> x_0, tolerancia ε
+<span class="kw">1.</span> k ← 0
+<span class="kw">2.</span> <span class="kw">mientras</span> ||∇f(x_k)|| > ε:
+<span class="kw">3.</span>   η_k ← min(0.5, √||∇f(x_k)||)   <span class="cm">// superlineal</span>
+<span class="kw">4.</span>   tol_CG ← η_k · ||∇f(x_k)||
+<span class="kw">5.</span>   <span class="hl">p_k ← CG_Truncado(∇f_k, H_k·(·), tol_CG)</span>
+<span class="kw">6.</span>   Hallar α_k con Armijo (iniciando α = 1)
+<span class="kw">7.</span>   x_{k+1} ← x_k + α_k p_k
+<span class="kw">8.</span>   k ← k + 1
+<span class="kw">9.</span> <span class="kw">retornar</span> x_k</pre>
+        <pre class="algo"><span class="kw">Subrutina:</span> CG_Truncado(g, Hv, tol_CG)
+<span class="kw">1.</span> z_0 ← 0;  r_0 ← g;  d_0 ← -r_0
+<span class="kw">2.</span> <span class="kw">para</span> j = 0, 1, 2, ..., j_max:
+<span class="kw">3.</span>   w_j ← Hv(d_j)          <span class="cm">// 1 prod. Hessiana-vector</span>
+<span class="kw">4.</span>   κ_j ← d_jᵀ w_j
+<span class="kw">5.</span>   <span class="warn">si κ_j ≤ 0:</span>             <span class="cm">// ¡curvatura negativa!</span>
+<span class="kw">6.</span>     <span class="warn">retornar (-g si j == 0 sino z_j)</span>
+<span class="kw">7.</span>   α_j ← (r_jᵀ r_j) / κ_j
+<span class="kw">8.</span>   z_{j+1} ← z_j + α_j d_j
+<span class="kw">9.</span>   r_{j+1} ← r_j + α_j w_j
+<span class="kw">10.</span>  <span class="hl">si ||r_{j+1}|| ≤ tol_CG: retornar z_{j+1}</span>
+<span class="kw">11.</span>  β_{j+1} ← (r_{j+1}ᵀ r_{j+1}) / (r_jᵀ r_j)
+<span class="kw">12.</span>  d_{j+1} ← -r_{j+1} + β_{j+1} d_j</pre>
+      </div>
+      <div class="callout">
+        <b>Observación de memoria:</b> Toda la subrutina solo mantiene <b>4 vectores de tamaño $n$</b> ($z, r, d, w$) en memoria: complejidad espacial $O(n)$ — independiente del tamaño de la Hessiana.
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 12: LABORATORIO INTERACTIVO EN VIVO (ROSENBROCK) -->
+  <section class="slide" data-title="Laboratorio Interactivo: Rosenbrock 2D" data-notes="Esta es la diapositiva estrella de la exposición. Pulsar Ejecutar y comentar en vivo: Descenso de Gradiente se arrastra por el valle en miles de iteraciones; BFGS curva suavemente aprendiendo la forma del valle en ~33 iteraciones; Newton-CG cruza zonas de curvatura negativa (donde se activa el truncamiento) y luego desploma el gradiente de 10^-2 a 10^-14 en los últimos 4 pasos gracias a la convergencia cuadrática local.">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">06 · Simulación en Tiempo Real</div>
+        <h2 class="slide-title">Laboratorio en Vivo: GD vs. BFGS vs. Newton-CG en Rosenbrock</h2>
+      </div>
+      <span class="slide-num">12 / 14</span>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="canvas-wrap">
+          <div style="font-size:12.5px; font-weight:800; color:#0f172a;">Valle de Rosenbrock: $f(x_1,x_2) = (1-x_1)^2 + 100(x_2-x_1^2)^2$</div>
+          <canvas id="rosenCanvas" width="490" height="330"></canvas>
+        </div>
+        <div class="canvas-wrap">
+          <div style="font-size:12.5px; font-weight:800; color:#0f172a;">Convergencia en escala logarítmica: $\log_{10}\|\nabla f(x_k)\|_2$</div>
+          <canvas id="convCanvas" width="490" height="330"></canvas>
+        </div>
+      </div>
+      <div class="ctrl-row">
+        <button class="ctrl-btn teal" id="btnRosenPlay">▶ Iniciar Carrera</button>
+        <button class="ctrl-btn purple" id="btnRosenStep">+1 Paso</button>
+        <button class="ctrl-btn outline" id="btnRosenEnd">Ver Resultado Final</button>
+        <button class="ctrl-btn outline" id="btnRosenReset">Reiniciar</button>
+      </div>
+      <div class="stat-strip">
+        <div class="stat-chip" style="border-left:4px solid var(--red);"><span style="color:var(--red); font-weight:800;">Descenso de Gradiente</span><b id="stGD">k = 0 | ||∇f|| = 2.33e+2</b></div>
+        <div class="stat-chip" style="border-left:4px solid var(--accent);"><span style="color:var(--accent); font-weight:800;">BFGS (Wolfe)</span><b id="stBFGS">k = 0 | ||∇f|| = 2.33e+2</b></div>
+        <div class="stat-chip" style="border-left:4px solid var(--purple);"><span style="color:var(--purple); font-weight:800;">Newton-CG (Truncado)</span><b id="stNCG">k = 0 | ||∇f|| = 2.33e+2</b></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 13: CUADRO COMPARATIVO Y GUÍA DE DECISIÓN -->
+  <section class="slide" data-title="Comparativa Final y Guía de Decisión" data-notes="Resumir toda la exposición en una sola tabla clara. Recalcar la regla práctica: n pequeño/mediano sin Hessiana -> BFGS; n grande sin Hessiana -> L-BFGS; n grande con producto Hessiana-vector barato o necesidad de altísima precisión -> Newton-CG.">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">07 · Síntesis Comparativa</div>
+        <h2 class="slide-title">Comparativa de Métodos y ¿Cuál Elegir en la Práctica?</h2>
+      </div>
+      <span class="slide-num">13 / 14</span>
+    </div>
+    <div class="slide-body">
+      <table class="clean">
+        <thead>
+          <tr>
+            <th>Método</th>
+            <th>Derivadas requeridas</th>
+            <th>Memoria</th>
+            <th>Costo / iter.</th>
+            <th>Convergencia</th>
+            <th>Hessiana indefinida</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Descenso Gradiente</b></td><td>$\nabla f$</td><td>$O(n)$</td><td>$O(n)$</td>
+            <td><span class="pill bad">Lineal lenta</span></td><td>Inmune</td>
+          </tr>
+          <tr>
+            <td><b>Newton Exacto</b></td><td>$\nabla f, \nabla^2 f$</td><td>$O(n^2)$</td><td>$O(n^3)$</td>
+            <td><span class="pill purp">Cuadrática</span></td><td><span class="pill bad">Falla / puntos silla</span></td>
+          </tr>
+          <tr>
+            <td><b>DFP</b></td><td>Solo $\nabla f$</td><td>$O(n^2)$</td><td>$O(n^2)$</td>
+            <td><span class="pill mid">Superlineal frágil</span></td><td>SPD con Wolfe</td>
+          </tr>
+          <tr>
+            <td><b>BFGS</b></td><td>Solo $\nabla f$</td><td>$O(n^2)$</td><td>$O(n^2)$</td>
+            <td><span class="pill good">Superlineal robusta</span></td><td><span class="pill good">SPD hereditaria</span></td>
+          </tr>
+          <tr>
+            <td><b>L-BFGS</b></td><td>Solo $\nabla f$</td><td>$O(mn)$</td><td>$O(mn)$</td>
+            <td><span class="pill good">Superlineal / lineal rápida</span></td><td><span class="pill good">SPD con Wolfe</span></td>
+          </tr>
+          <tr>
+            <td><b>Newton-CG</b></td><td>$\nabla f$ y $\nabla^2 f \cdot d$ (o FD)</td><td>$O(n)$</td><td>$O(k_{\text{CG}} \cdot \text{mv})$</td>
+            <td><span class="pill purp">Superlineal → Cuadrática</span></td><td><span class="pill good">Trunca si $d^T H d \le 0$</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="grid-3">
+        <div class="card teal">
+          <h3>Usa BFGS cuando...</h3>
+          <p>$n \lesssim 10^3$, solo dispones de $\nabla f$ y buscas máxima robustez con implementación directa (`scipy.optimize.minimize(..., method='BFGS')`).</p>
+        </div>
+        <div class="card" style="border-left:4px solid var(--blue);">
+          <h3>Usa L-BFGS cuando...</h3>
+          <p>$n \gg 10^4$, solo tienes gradientes y la RAM no permite almacenar $n \times n$ (regresión logística masiva, ML, física).</p>
+        </div>
+        <div class="card purple">
+          <h3>Usa Newton-CG cuando...</h3>
+          <p>$n$ es muy grande, el producto $\nabla^2 f \cdot d$ es barato (disperso o autodiff) y el problema está mal condicionado o exige alta precisión.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 14: CONCLUSIONES Y REFERENCIAS -->
+  <section class="slide" data-title="Conclusiones y Referencias" data-notes="Cerrar sintetizando los 4 pilares aprendidos y mostrar las referencias clásicas (Nocedal & Wright es la referencia principal). Abrir espacio a preguntas.">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">08 · Cierre</div>
+        <h2 class="slide-title">Conclusiones y Referencias Bibliográficas</h2>
+      </div>
+      <span class="slide-num">14 / 14</span>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="card teal">
+          <h3>Conclusiones Principales</h3>
+          <ul>
+            <li><b>1. Curvatura sin $O(n^3)$:</b> Tanto BFGS como Newton-CG superan el cuello de botella de Newton exacto evitando invertir la matriz Hessiana.</li>
+            <li><b>2. La condición $s_k^T y_k > 0$ es el corazón de BFGS:</b> Garantizada por las condiciones de Wolfe, preserva $H_k \succ 0$ y otorga convergencia superlineal con autocorrección superior a DFP.</li>
+            <li><b>3. Newton-CG escala a millones de variables:</b> Combina memoria $O(n)$, productos <i>Hessian-Free</i>, secuencia de forzamiento $\eta_k$ contra el <i>oversolving</i> y truncamiento seguro ante curvatura negativa.</li>
+            <li><b>4. Validación experimental:</b> En Rosenbrock 2D, BFGS logra $\|\nabla f\| < 10^{-8}$ en ~33 iteraciones (vs. &gt;5000 de GD); en problemas de gran dimensión mal condicionados, Newton-CG y L-BFGS dominan en tiempo y RAM.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Referencias Bibliográficas</h3>
+          <ul style="font-size:13px;">
+            <li><b>Nocedal, J. & Wright, S. J. (2006).</b> <i>Numerical Optimization</i> (2.ª ed.). Springer. (Caps. 6 y 7).</li>
+            <li><b>Dennis, J. E. & Schnabel, R. B. (1996).</b> <i>Numerical Methods for Unconstrained Optimization and Nonlinear Equations</i>. SIAM.</li>
+            <li><b>Dembo, R. S., Eisenstat, S. C. & Steihaug, T. (1982).</b> «Inexact Newton Methods». <i>SIAM J. Numer. Anal.</i>, 19(2), 400–408.</li>
+            <li><b>Broyden (1970); Fletcher (1970); Goldfarb (1970); Shanno (1970).</b> Artículos fundacionales independientes de la actualización BFGS.</li>
+            <li><b>Chong, E. K. P. & Zak, S. H. (2013).</b> <i>An Introduction to Optimization</i> (4.ª ed.). Wiley.</li>
+            <li><b>Virtanen, P. et al. (2020).</b> «SciPy 1.0: Fundamental Algorithms for Scientific Computing in Python». <i>Nature Methods</i>, 17, 261–272.</li>
+          </ul>
+          <div class="callout purple" style="margin-top:auto; text-align:center; font-weight:700;">
+            ¡Gracias por su atención! ¿Preguntas?
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- BOTTOM BAR -->
+<footer class="bottombar">
+  <div class="nav-group">
+    <button class="nav-btn" id="btnPrev">← Anterior</button>
+    <span class="slide-counter" id="slideCounter">1 / 14</span>
+    <button class="nav-btn" id="btnNext">Siguiente →</button>
+  </div>
+  <div style="font-size:12.5px; color:var(--muted);" id="slideTitleBar">Portada</div>
+</footer>
+
+<!-- SPEAKER NOTES -->
+<aside class="notes-panel" id="notesPanel">
+  <h4>Guion / Notas del Expositor</h4>
+  <div id="notesText"></div>
+</aside>
+
+<!-- OVERVIEW MODAL -->
+<div class="overview" id="overviewModal">
+  <div class="ov-grid" id="ovGrid"></div>
+</div>
+
+<script>
+// ============================================================
+// 1. SLIDE ENGINE & NAVIGATION
+// ============================================================
+const slides = Array.from(document.querySelectorAll('.slide'));
+let cur = 0;
+
+function showSlide(idx) {
+  cur = Math.max(0, Math.min(slides.length - 1, idx));
+  slides.forEach((s, i) => s.classList.toggle('active', i === cur));
+  document.getElementById('slideCounter').textContent = `${cur + 1} / ${slides.length}`;
+  document.getElementById('progressBar').style.width = `${((cur + 1) / slides.length) * 100}%`;
+  document.getElementById('slideTitleBar').textContent = slides[cur].dataset.title || '';
+  document.getElementById('notesText').textContent = slides[cur].dataset.notes || 'Sin notas para esta diapositiva.';
+  document.getElementById('btnPrev').disabled = cur === 0;
+  document.getElementById('btnNext').disabled = cur === slides.length - 1;
+  buildOverview();
+  if (cur === 9) drawSaddle(saddleState);
+  if (cur === 11) drawRosen(rosenStep);
+}
+
+function buildOverview() {
+  const grid = document.getElementById('ovGrid');
+  grid.innerHTML = '';
+  slides.forEach((s, i) => {
+    const div = document.createElement('div');
+    div.className = 'ov-card' + (i === cur ? ' current' : '');
+    div.innerHTML = `<div class="ov-num">Diapositiva ${i + 1}</div><div class="ov-title">${s.dataset.title}</div>`;
+    div.onclick = () => { showSlide(i); toggleOverview(false); };
+    grid.appendChild(div);
+  });
+}
+
+function toggleNotes() {
+  const p = document.getElementById('notesPanel');
+  const open = p.classList.toggle('open');
+  document.getElementById('btnNotes').classList.toggle('active', open);
+}
+function toggleOverview(force) {
+  const m = document.getElementById('overviewModal');
+  const open = typeof force === 'boolean' ? (m.classList.toggle('open', force), force) : m.classList.toggle('open');
+  document.getElementById('btnOverview').classList.toggle('active', open);
+}
+function toggleTheme() {
+  const dark = document.body.classList.toggle('dark');
+  document.getElementById('btnTheme').classList.toggle('active', dark);
+}
+function toggleFS() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
+}
+
+document.getElementById('btnPrev').onclick = () => showSlide(cur - 1);
+document.getElementById('btnNext').onclick = () => showSlide(cur + 1);
+document.getElementById('btnNotes').onclick = toggleNotes;
+document.getElementById('btnOverview').onclick = () => toggleOverview();
+document.getElementById('btnTheme').onclick = toggleTheme;
+document.getElementById('btnFS').onclick = toggleFS;
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); showSlide(cur + 1); }
+  else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); showSlide(cur - 1); }
+  else if (e.key === 'n' || e.key === 'N') toggleNotes();
+  else if (e.key === 'o' || e.key === 'O') toggleOverview();
+  else if (e.key === 'd' || e.key === 'D') toggleTheme();
+  else if (e.key === 'f' || e.key === 'F') toggleFS();
+  else if (e.key === 'Escape') toggleOverview(false);
+});
+
+// ============================================================
+// 2. KATEX RENDERING + OFFLINE GRACEFUL FALLBACK
+// ============================================================
+window.addEventListener('load', () => {
+  if (typeof renderMathInElement === 'function') {
+    renderMathInElement(document.body, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '$',  right: '$',  display: false }
+      ],
+      throwOnError: false
+    });
+  } else {
+    // Graceful offline Unicode math cleanup if CDN unavailable
+    const rep = [
+      [/\\nabla\^2/g, '∇²'], [/\\nabla/g, '∇'], [/\\alpha/g, 'α'], [/\\beta/g, 'β'],
+      [/\\rho/g, 'ρ'], [/\\eta/g, 'η'], [/\\kappa/g, 'κ'], [/\\lambda/g, 'λ'],
+      [/\\varepsilon/g, 'ε'], [/\\mathbb\{R\}/g, 'ℝ'], [/\\succeq/g, '≽'], [/\\succ/g, '≻'],
+      [/\\le/g, '≤'], [/\\ge/g, '≥'], [/\\neq/g, '≠'], [/\\approx/g, '≈'], [/\\to/g, '→'],
+      [/\\Longrightarrow/g, '⟹'], [/\\Longleftrightarrow/g, '⟺'], [/\\cdot/g, '·'],
+      [/\\times/g, '×'], [/\\infty/g, '∞'], [/\\in/g, '∈'], [/\\sqrt/g, '√'],
+      [/\$\$/g, ''], [/\$/g, '']
+    ];
+    document.querySelectorAll('.slide').forEach(el => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        let t = node.nodeValue;
+        if (t.includes('$') || t.includes('\\')) {
+          rep.forEach(([r, v]) => t = t.replace(r, v));
+          node.nodeValue = t;
+        }
+      }
+    });
+  }
+});
+
+// ============================================================
+// 3. SLIDE 8: INTERACTIVE COMPLEXITY & MEMORY EXPLORER
+// ============================================================
+function fmtBytes(b) {
+  if (b < 1024) return b.toFixed(0) + ' B';
+  if (b < 1024**2) return (b/1024).toFixed(1) + ' KB';
+  if (b < 1024**3) return (b/1024**2).toFixed(1) + ' MB';
+  if (b < 1024**4) return (b/1024**3).toFixed(1) + ' GB';
+  return (b/1024**4).toFixed(1) + ' TB';
+}
+function fmtOps(o) {
+  if (o < 1e3) return o.toFixed(0) + ' FLOPs';
+  if (o < 1e6) return (o/1e3).toFixed(1) + ' KFLOPs';
+  if (o < 1e9) return (o/1e6).toFixed(1) + ' MFLOPs';
+  if (o < 1e12) return (o/1e9).toFixed(1) + ' GFLOPs';
+  if (o < 1e15) return (o/1e12).toFixed(1) + ' TFLOPs';
+  return (o/1e15).toFixed(1) + ' PFLOPs';
+}
+function updateScaleTable() {
+  const exp = parseFloat(document.getElementById('dimSlider').value);
+  const n = Math.round(Math.pow(10, exp));
+  document.getElementById('dimVal').textContent = n.toLocaleString('es-ES');
+  const m = 10, kcg = Math.min(n, Math.round(12 + 2.5 * Math.log10(n) * 3));
+  const rows = [
+    { name: 'Newton Exacto', memO: 'O(n²)', memB: n*n*8, ops: (n*n*n)/3,
+      badge: n > 5000 ? ['Imposible (RAM/CPU)', 'bad'] : (n > 800 ? ['Lento', 'mid'] : ['Óptimo', 'good']) },
+    { name: 'BFGS denso', memO: 'O(n²)', memB: n*n*8, ops: 6*n*n,
+      badge: n > 20000 ? ['Excede RAM', 'bad'] : (n > 3000 ? ['Pesado', 'mid'] : ['Excelente', 'good']) },
+    { name: 'L-BFGS (m = 10)', memO: 'O(mn)', memB: 2*m*n*8, ops: 4*m*n,
+      badge: ['Escala perfecto', 'good'] },
+    { name: 'Newton-CG (Hessian-Free)', memO: 'O(n)', memB: 4*n*8, ops: kcg * 8 * n,
+      badge: ['Escala perfecto', 'purp'] }
+  ];
+  const tb = document.getElementById('scaleTableBody');
+  tb.innerHTML = rows.map(r => `
+    <tr>
+      <td><b>${r.name}</b></td>
+      <td><code>${r.memO}</code></td>
+      <td><b>${fmtBytes(r.memB)}</b></td>
+      <td>${fmtOps(r.ops)}</td>
+      <td><span class="pill ${r.badge[1]}">${r.badge[0]}</span></td>
+    </tr>
+  `).join('');
+}
+document.getElementById('dimSlider').addEventListener('input', updateScaleTable);
+updateScaleTable();
+
+// ============================================================
+// 4. SLIDE 10: INTERACTIVE SADDLE POINT / NEGATIVE CURVATURE DEMO
+// ============================================================
+const sadF = (x) => x[0]**4 - 2*x[0]**2 + x[1]**2 + 0.2*x[0]*x[1];
+const sadG = (x) => [4*x[0]**3 - 4*x[0] + 0.2*x[1], 2*x[1] + 0.2*x[0]];
+const sadH = (x) => [[12*x[0]**2 - 4, 0.2], [0.2, 2]];
+
+function computeSaddlePaths() {
+  const x0 = [0.35, 0.80];
+  // 1. Pure Newton
+  let x = [...x0], pNP = [[...x]];
+  for (let k = 0; k < 12; k++) {
+    const g = sadG(x), H = sadH(x);
+    const det = H[0][0]*H[1][1] - H[0][1]*H[1][0];
+    const d0 = -(H[1][1]*g[0] - H[0][1]*g[1]) / det;
+    const d1 = -(-H[1][0]*g[0] + H[0][0]*g[1]) / det;
+    x = [x[0]+d0, x[1]+d1];
+    pNP.push([...x]);
+    if (Math.hypot(g[0], g[1]) < 1e-8) break;
+  }
+  // 2. BFGS
+  x = [...x0];
+  let H = [[1,0],[0,1]], g = sadG(x), pBF = [[...x]];
+  for (let k = 0; k < 25; k++) {
+    if (Math.hypot(g[0], g[1]) < 1e-8) break;
+    let p = [-(H[0][0]*g[0]+H[0][1]*g[1]), -(H[1][0]*g[0]+H[1][1]*g[1])];
+    // Backtracking + curvature check
+    let a = 1.0, f0 = sadF(x), dg0 = g[0]*p[0]+g[1]*p[1];
+    while (a > 1e-8 && sadF([x[0]+a*p[0], x[1]+a*p[1]]) > f0 + 1e-4*a*dg0) a *= 0.5;
+    const xn = [x[0]+a*p[0], x[1]+a*p[1]], gn = sadG(xn);
+    const s = [xn[0]-x[0], xn[1]-x[1]], y = [gn[0]-g[0], gn[1]-g[1]];
+    const sy = s[0]*y[0]+s[1]*y[1];
+    if (sy > 1e-12) {
+      const rho = 1/sy;
+      const Hy = [H[0][0]*y[0]+H[0][1]*y[1], H[1][0]*y[0]+H[1][1]*y[1]];
+      const yHy = y[0]*Hy[0]+y[1]*Hy[1];
+      const c = rho*(1 + rho*yHy);
+      H = [
+        [H[0][0] + c*s[0]*s[0] - rho*(Hy[0]*s[0]+s[0]*Hy[0]), H[0][1] + c*s[0]*s[1] - rho*(Hy[0]*s[1]+s[0]*Hy[1])],
+        [H[1][0] + c*s[1]*s[0] - rho*(Hy[1]*s[0]+s[1]*Hy[0]), H[1][1] + c*s[1]*s[1] - rho*(Hy[1]*s[1]+s[1]*Hy[1])]
+      ];
+    }
+    x = xn; g = gn; pBF.push([...x]);
+  }
+  // 3. Newton-CG
+  x = [...x0];
+  let pNC = [[...x]];
+  for (let k = 0; k < 25; k++) {
+    const gk = sadG(x), ng = Math.hypot(gk[0], gk[1]);
+    if (ng < 1e-8) break;
+    const Hk = sadH(x), tol = Math.min(0.5, Math.sqrt(ng))*ng;
+    let z = [0,0], r = [...gk], d = [-r[0], -r[1]], p = null;
+    for (let j = 0; j < 4; j++) {
+      const Hd = [Hk[0][0]*d[0]+Hk[0][1]*d[1], Hk[1][0]*d[0]+Hk[1][1]*d[1]];
+      const dHd = d[0]*Hd[0]+d[1]*Hd[1];
+      if (dHd <= 0) { p = j === 0 ? [-gk[0], -gk[1]] : [...z]; break; }
+      const rr = r[0]*r[0]+r[1]*r[1], ac = rr/dHd;
+      z = [z[0]+ac*d[0], z[1]+ac*d[1]];
+      r = [r[0]+ac*Hd[0], r[1]+ac*Hd[1]];
+      if (Math.hypot(r[0], r[1]) <= tol) { p = [...z]; break; }
+      const bc = (r[0]*r[0]+r[1]*r[1])/rr;
+      d = [-r[0]+bc*d[0], -r[1]+bc*d[1]];
+    }
+    if (!p) p = z;
+    let a = 1.0, f0 = sadF(x), dg0 = gk[0]*p[0]+gk[1]*p[1];
+    while (a > 1e-8 && sadF([x[0]+a*p[0], x[1]+a*p[1]]) > f0 + 1e-4*a*dg0) a *= 0.5;
+    x = [x[0]+a*p[0], x[1]+a*p[1]];
+    pNC.push([...x]);
+  }
+  return { pNP, pBF, pNC };
+}
+
+const sadPaths = computeSaddlePaths();
+let saddleState = 0, saddleTimer = null;
+
+function drawSaddle(step) {
+  const cv = document.getElementById('saddleCanvas');
+  if (!cv) return;
+  const ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const xmin = -1.45, xmax = 1.45, ymin = -1.0, ymax = 1.05;
+  const mx = (x) => ((x - xmin)/(xmax - xmin))*W;
+  const my = (y) => ((ymax - y)/(ymax - ymin))*H;
+
+  // Background contour grid
+  const img = ctx.createImageData(W, H);
+  for (let py = 0; py < H; py++) {
+    const yv = ymax - (py/H)*(ymax - ymin);
+    for (let px = 0; px < W; px++) {
+      const xv = xmin + (px/W)*(xmax - xmin);
+      const fv = sadF([xv, yv]);
+      const t = Math.max(0, Math.min(1, (fv + 1.1) / 3.0));
+      const band = Math.floor(t*12)/12;
+      const edge = Math.abs(t*12 - Math.round(t*12)) < 0.045;
+      let r = 220 + band*32, g = 238 - band*30, b = 250 - band*70;
+      if (Math.abs(xv) < 1/Math.sqrt(3)) { r = Math.min(255, r + 14); g -= 10; b -= 10; }
+      if (edge) { r *= 0.9; g *= 0.9; b *= 0.92; }
+      const i = (py*W + px)*4;
+      img.data[i]=r; img.data[i+1]=g; img.data[i+2]=b; img.data[i+3]=255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  // Shaded negative curvature border lines
+  const lim = 1/Math.sqrt(3);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(220,38,38,0.45)'; ctx.setLineDash([4,4]); ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.moveTo(mx(-lim), 0); ctx.lineTo(mx(-lim), H); ctx.moveTo(mx(lim), 0); ctx.lineTo(mx(lim), H); ctx.stroke();
+  ctx.restore();
+
+  // Labels
+  ctx.fillStyle = '#991b1b'; ctx.font = 'bold 11px Segoe UI';
+  ctx.fillText('Zona curvatura < 0', mx(-0.48), 16);
+
+  const drawTr = (arr, col, dash) => {
+    const limN = Math.min(arr.length, step + 1);
+    if (limN < 1) return;
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2.6;
+    if (dash) ctx.setLineDash([6,4]);
+    ctx.beginPath();
+    for (let i = 0; i < limN; i++) {
+      const px = mx(arr[i][0]), py = my(arr[i][1]);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke(); ctx.restore();
+    const last = arr[limN - 1];
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(mx(last[0]), my(last[1]), 4.5, 0, Math.PI*2); ctx.fill();
+  };
+
+  drawTr(sadPaths.pNP, '#dc2626', false);
+  drawTr(sadPaths.pBF, '#0d9488', false);
+  drawTr(sadPaths.pNC, '#6d28d9', true);
+
+  // Saddle marker & start & min
+  ctx.fillStyle = '#dc2626'; ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(mx(0), my(0), 5.5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#0f172a'; ctx.font = 'bold 11px Segoe UI';
+  ctx.fillText('Silla (0,0)', mx(0)+7, my(0)+14);
+  ctx.beginPath(); ctx.arc(mx(0.35), my(0.80), 4.5, 0, Math.PI*2); ctx.fill();
+  ctx.fillText('x₀', mx(0.35)+7, my(0.80)-4);
+
+  // Legend
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(8, H-66, 200, 58);
+  ctx.strokeStyle = '#cbd5e1'; ctx.strokeRect(8, H-66, 200, 58);
+  const lg = [['#dc2626','Newton puro → Silla'], ['#0d9488','BFGS → Mínimo'], ['#6d28d9','Newton-CG → Mínimo']];
+  lg.forEach((it, i) => {
+    ctx.fillStyle = it[0]; ctx.fillRect(16, H-56+i*17, 16, 4);
+    ctx.fillStyle = '#0f172a'; ctx.font = '11px Segoe UI'; ctx.fillText(it[1], 38, H-50+i*17);
+  });
+}
+
+document.getElementById('btnSaddleRun').onclick = () => {
+  clearInterval(saddleTimer);
+  saddleState = 0;
+  saddleTimer = setInterval(() => {
+    saddleState++;
+    drawSaddle(saddleState);
+    if (saddleState >= 16) {
+      clearInterval(saddleTimer);
+      document.getElementById('saddleInfo').innerHTML =
+        '<b style="color:#dc2626;">Newton puro</b> quedó atrapado en el punto silla (f=0) · <b style="color:#0d9488;">BFGS</b> y <b style="color:#6d28d9;">Newton-CG</b> escaparon al mínimo (f = −1.010).';
+    }
+  }, 140);
+};
+document.getElementById('btnSaddleReset').onclick = () => {
+  clearInterval(saddleTimer); saddleState = 0; drawSaddle(0);
+  document.getElementById('saddleInfo').textContent = 'En x₀=(0.35, 0.80), λ_min(∇²f) = −2.54 < 0: Newton puro cae al punto silla (0,0).';
+};
+
+// ============================================================
+// 5. SLIDE 12: LIVE INTERACTIVE ROSENBROCK RACE (GD vs BFGS vs NEWTON-CG)
+// ============================================================
+const rosF = (x) => (1 - x[0])**2 + 100*(x[1] - x[0]**2)**2;
+const rosG = (x) => [-2*(1 - x[0]) - 400*x[0]*(x[1] - x[0]**2), 200*(x[1] - x[0]**2)];
+const rosH = (x) => [[2 - 400*(x[1] - 3*x[0]**2), -400*x[0]], [-400*x[0], 200]];
+
+function runRosenRace() {
+  const x0 = [-1.2, 1.0];
+  // GD (run 80 steps for live view)
+  let x = [...x0], gd = [{x:[...x], g:Math.hypot(...rosG(x))}];
+  for (let k = 0; k < 80; k++) {
+    const g = rosG(x), p = [-g[0], -g[1]];
+    let a = 1.0, f0 = rosF(x), dg0 = g[0]*p[0]+g[1]*p[1];
+    while (a > 1e-10 && rosF([x[0]+a*p[0], x[1]+a*p[1]]) > f0 + 1e-4*a*dg0) a *= 0.5;
+    x = [x[0]+a*p[0], x[1]+a*p[1]];
+    gd.push({x:[...x], g:Math.hypot(...rosG(x))});
+  }
+  // BFGS with Strong Wolfe
+  function wolfe2(x, p, f0, g0) {
+    const c1 = 1e-4, c2 = 0.9, dg0 = g0[0]*p[0]+g0[1]*p[1];
+    function zoom(alo, ahi, flo) {
+      let a = 0.5*(alo+ahi);
+      for (let i=0;i<25;i++) {
+        a = 0.5*(alo+ahi);
+        const xn = [x[0]+a*p[0], x[1]+a*p[1]], fa = rosF(xn);
+        if (fa > f0 + c1*a*dg0 || (fa >= flo && alo > 0)) ahi = a;
+        else {
+          const ga = rosG(xn), dga = ga[0]*p[0]+ga[1]*p[1];
+          if (Math.abs(dga) <= -c2*dg0) return a;
+          if (dga*(ahi-alo) >= 0) ahi = alo;
+          alo = a; flo = fa;
+        }
+      }
+      return a;
+    }
+    let ap = 0, fp = f0, a = 1.0;
+    for (let i=0;i<25;i++) {
+      const xn = [x[0]+a*p[0], x[1]+a*p[1]], fa = rosF(xn);
+      if (fa > f0 + c1*a*dg0 || (i>0 && fa >= fp)) return zoom(ap, a, fp);
+      const ga = rosG(xn), dga = ga[0]*p[0]+ga[1]*p[1];
+      if (Math.abs(dga) <= -c2*dg0) return a;
+      if (dga >= 0) return zoom(a, ap, fa);
+      ap = a; fp = fa; a *= 2.0;
+    }
+    return a;
+  }
+  x = [...x0]; let H = [[1,0],[0,1]], g = rosG(x), bfgs = [{x:[...x], g:Math.hypot(...g)}];
+  for (let k = 0; k < 80; k++) {
+    if (Math.hypot(...g) < 1e-8) break;
+    const p = [-(H[0][0]*g[0]+H[0][1]*g[1]), -(H[1][0]*g[0]+H[1][1]*g[1])];
+    const a = wolfe2(x, p, rosF(x), g);
+    const xn = [x[0]+a*p[0], x[1]+a*p[1]], gn = rosG(xn);
+    const s = [xn[0]-x[0], xn[1]-x[1]], y = [gn[0]-g[0], gn[1]-g[1]], sy = s[0]*y[0]+s[1]*y[1];
+    if (sy > 1e-16) {
+      if (k === 0) { const sc = sy/(y[0]*y[0]+y[1]*y[1]); H = [[sc,0],[0,sc]]; }
+      const rho = 1/sy, Hy = [H[0][0]*y[0]+H[0][1]*y[1], H[1][0]*y[0]+H[1][1]*y[1]];
+      const c = rho*(1 + rho*(y[0]*Hy[0]+y[1]*Hy[1]));
+      H = [
+        [H[0][0] + c*s[0]*s[0] - rho*(Hy[0]*s[0]+s[0]*Hy[0]), H[0][1] + c*s[0]*s[1] - rho*(Hy[0]*s[1]+s[0]*Hy[1])],
+        [H[1][0] + c*s[1]*s[0] - rho*(Hy[1]*s[0]+s[1]*Hy[0]), H[1][1] + c*s[1]*s[1] - rho*(Hy[1]*s[1]+s[1]*Hy[1])]
+      ];
+    }
+    x = xn; g = gn; bfgs.push({x:[...x], g:Math.hypot(...g)});
+  }
+  // Newton-CG
+  x = [...x0]; let ncg = [{x:[...x], g:Math.hypot(...rosG(x))}];
+  for (let k = 0; k < 80; k++) {
+    const gk = rosG(x), ng = Math.hypot(...gk);
+    if (ng < 1e-8) break;
+    const Hk = rosH(x), tol = Math.min(0.5, Math.sqrt(ng))*ng;
+    let z=[0,0], r=[...gk], d=[-r[0],-r[1]], p=null;
+    for (let j=0;j<6;j++) {
+      const Hd = [Hk[0][0]*d[0]+Hk[0][1]*d[1], Hk[1][0]*d[0]+Hk[1][1]*d[1]];
+      const dHd = d[0]*Hd[0]+d[1]*Hd[1];
+      if (dHd <= 0) { p = j===0 ? [-gk[0],-gk[1]] : [...z]; break; }
+      const rr = r[0]*r[0]+r[1]*r[1], ac = rr/dHd;
+      z = [z[0]+ac*d[0], z[1]+ac*d[1]];
+      r = [r[0]+ac*Hd[0], r[1]+ac*Hd[1]];
+      if (Math.hypot(...r) <= tol) { p = [...z]; break; }
+      const bc = (r[0]*r[0]+r[1]*r[1])/rr;
+      d = [-r[0]+bc*d[0], -r[1]+bc*d[1]];
+    }
+    if (!p) p = z;
+    let a = 1.0, f0 = rosF(x), dg0 = gk[0]*p[0]+gk[1]*p[1];
+    while (a > 1e-10 && rosF([x[0]+a*p[0], x[1]+a*p[1]]) > f0 + 1e-4*a*dg0) a *= 0.5;
+    x = [x[0]+a*p[0], x[1]+a*p[1]];
+    ncg.push({x:[...x], g:Math.hypot(...rosG(x))});
+  }
+  return { gd, bfgs, ncg };
+}
+
+const race = runRosenRace();
+let rosenStep = 0, rosenTimer = null, rosenBg = null;
+
+function buildRosenBg(W, H) {
+  const off = document.createElement('canvas'); off.width = W; off.height = H;
+  const ctx = off.getContext('2d'), img = ctx.createImageData(W, H);
+  const xmin=-1.5, xmax=1.5, ymin=-0.45, ymax=1.55;
+  for (let py=0; py<H; py++) {
+    const yv = ymax - (py/H)*(ymax-ymin);
+    for (let px=0; px<W; px++) {
+      const xv = xmin + (px/W)*(xmax-xmin);
+      const lv = Math.log10(rosF([xv, yv]) + 0.05);
+      const t = Math.max(0, Math.min(1, (lv + 1.3)/4.5));
+      const band = Math.floor(t*14)/14;
+      const edge = Math.abs(t*14 - Math.round(t*14)) < 0.045;
+      let r = 246 - band*92, g = 249 - band*62, b = 253 - band*18;
+      if (edge) { r *= 0.89; g *= 0.91; b *= 0.94; }
+      const i = (py*W + px)*4;
+      img.data[i]=r; img.data[i+1]=g; img.data[i+2]=b; img.data[i+3]=255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return off;
+}
+
+function drawRosen(step) {
+  const cv = document.getElementById('rosenCanvas');
+  const cv2 = document.getElementById('convCanvas');
+  if (!cv || !cv2) return;
+  const W = cv.width, H = cv.height;
+  if (!rosenBg) rosenBg = buildRosenBg(W, H);
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(rosenBg, 0, 0);
+
+  const xmin=-1.5, xmax=1.5, ymin=-0.45, ymax=1.55;
+  const mx = (x) => ((x-xmin)/(xmax-xmin))*W;
+  const my = (y) => ((ymax-y)/(ymax-ymin))*H;
+
+  const drawP = (arr, col, dash, dots) => {
+    const lim = Math.min(arr.length, step + 1);
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2.4;
+    if (dash) ctx.setLineDash([6,4]);
+    ctx.beginPath();
+    for (let i=0;i<lim;i++) {
+      const px = mx(arr[i].x[0]), py = my(arr[i].x[1]);
+      if (i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke(); ctx.restore();
+    if (dots) {
+      ctx.fillStyle = col;
+      for (let i=0;i<lim;i++) { ctx.beginPath(); ctx.arc(mx(arr[i].x[0]), my(arr[i].x[1]), 2.6, 0, Math.PI*2); ctx.fill(); }
+    }
+    const curPt = arr[lim - 1];
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(mx(curPt.x[0]), my(curPt.x[1]), 5, 0, Math.PI*2); ctx.fill();
+  };
+
+  drawP(race.gd, '#dc2626', false, false);
+  drawP(race.ncg, '#6d28d9', true, false);
+  drawP(race.bfgs, '#0d9488', false, true);
+
+  // Start & Optimum
+  ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(mx(-1.2), my(1.0), 5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#f59e0b'; ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(mx(1.0), my(1.0), 7, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#0f172a'; ctx.font = 'bold 11px Segoe UI';
+  ctx.fillText('x₀(-1.2, 1)', mx(-1.2)+7, my(1.0)-6);
+  ctx.fillText('x*(1, 1)', mx(1.0)-45, my(1.0)-10);
+
+  // Right canvas: Semilog convergence
+  const c2 = cv2.getContext('2d'), W2 = cv2.width, H2 = cv2.height;
+  c2.fillStyle = '#ffffff'; c2.fillRect(0, 0, W2, H2);
+  const padL = 52, padR = 16, padT = 18, padB = 34, pw = W2-padL-padR, ph = H2-padT-padB;
+  const kmax = 70, yMin = -15, yMax = 3;
+  const gx = (k) => padL + (k/kmax)*pw;
+  const gy = (lg) => padT + ((yMax - lg)/(yMax - yMin))*ph;
+
+  c2.strokeStyle = '#e2e8f0'; c2.lineWidth = 1;
+  for (let k=0;k<=kmax;k+=10) { c2.beginPath(); c2.moveTo(gx(k), padT); c2.lineTo(gx(k), padT+ph); c2.stroke(); c2.fillStyle='#64748b'; c2.font='10.5px Segoe UI'; c2.fillText(k, gx(k)-6, padT+ph+16); }
+  for (let e=-15;e<=3;e+=3) { c2.beginPath(); c2.moveTo(padL, gy(e)); c2.lineTo(padL+pw, gy(e)); c2.stroke(); c2.fillStyle='#64748b'; c2.fillText('10^'+e, 6, gy(e)+4); }
+  c2.strokeStyle = '#334155'; c2.lineWidth = 1.4; c2.strokeRect(padL, padT, pw, ph);
+  // Tolerance line 1e-8
+  c2.save(); c2.strokeStyle='#64748b'; c2.setLineDash([4,4]); c2.beginPath(); c2.moveTo(padL, gy(-8)); c2.lineTo(padL+pw, gy(-8)); c2.stroke(); c2.restore();
+  c2.fillStyle='#475569'; c2.font='10.5px Segoe UI'; c2.fillText('tol = 10⁻⁸', padL+pw-58, gy(-8)-5);
+
+  const drawCurve = (arr, col, dash) => {
+    const lim = Math.min(arr.length, step + 1);
+    c2.save(); c2.strokeStyle = col; c2.lineWidth = 2.5;
+    if (dash) c2.setLineDash([6,4]);
+    c2.beginPath();
+    for (let k=0;k<lim && k<=kmax;k++) {
+      const lg = Math.max(yMin, Math.min(yMax, Math.log10(Math.max(arr[k].g, 1e-15))));
+      if (k===0) c2.moveTo(gx(k), gy(lg)); else c2.lineTo(gx(k), gy(lg));
+    }
+    c2.stroke(); c2.restore();
+  };
+  drawCurve(race.gd, '#dc2626', false);
+  drawCurve(race.ncg, '#6d28d9', true);
+  drawCurve(race.bfgs, '#0d9488', false);
+
+  // Update stat chips
+  const iG = Math.min(step, race.gd.length-1), iB = Math.min(step, race.bfgs.length-1), iN = Math.min(step, race.ncg.length-1);
+  document.getElementById('stGD').textContent   = `k = ${iG} | ||∇f|| = ${race.gd[iG].g.toExponential(2)}`;
+  document.getElementById('stBFGS').textContent = `k = ${iB}${iB===race.bfgs.length-1?' ✓':''} | ||∇f|| = ${race.bfgs[iB].g.toExponential(2)}`;
+  document.getElementById('stNCG').textContent  = `k = ${iN}${iN===race.ncg.length-1?' ✓':''} | ||∇f|| = ${race.ncg[iN].g.toExponential(2)}`;
+}
+
+document.getElementById('btnRosenPlay').onclick = () => {
+  clearInterval(rosenTimer);
+  if (rosenStep >= 65) rosenStep = 0;
+  rosenTimer = setInterval(() => {
+    rosenStep++;
+    drawRosen(rosenStep);
+    if (rosenStep >= 65) clearInterval(rosenTimer);
+  }, 95);
+};
+document.getElementById('btnRosenStep').onclick = () => { clearInterval(rosenTimer); rosenStep = Math.min(68, rosenStep+1); drawRosen(rosenStep); };
+document.getElementById('btnRosenEnd').onclick = () => { clearInterval(rosenTimer); rosenStep = 68; drawRosen(rosenStep); };
+document.getElementById('btnRosenReset').onclick = () => { clearInterval(rosenTimer); rosenStep = 0; drawRosen(0); };
+
+// Init
+showSlide(0);
+</script>
+</body>
+</html>
